@@ -1,14 +1,9 @@
 import java.io.ByteArrayOutputStream
 
-import org.apache.spark.sql.{DataFrame, Row, SparkSession, functions}
-import com.typesafe.config.ConfigFactory
-import org.elasticsearch.hadoop.cfg.ConfigurationOptions
+import org.apache.spark.sql.{Row, SparkSession, functions}
 import com.databricks.spark.avro._
 import org.apache.avro.Schema
 import org.apache.spark.sql.types.StructType
-
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
-import java.util.Properties
 
 
 import org.apache.avro.generic.{GenericData, GenericDatumWriter, GenericRecord}
@@ -24,13 +19,6 @@ object SftpStreaming extends Serializable {
     avroschema
   }
 
-  /*val props = new Properties()
-      props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092")
-      props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer")
-      props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.ByteArraySerializer")
-      props.put("schema.registry.url", "http://localhost:8081")
-
-  val producer = new KafkaProducer[String,Array[Byte]](props)*/
 
   val schema = "{\"name\": \"sftp\",\"namespace\": \"nifi\","  +
     "\"type\": \"record\"," +
@@ -104,49 +92,5 @@ object SftpStreaming extends Serializable {
       .option("topic","sftp-topic")
       .save()
 
-
-
-
-   // writeAvroToKafka(producer, avroSchema, df)
-
-    // Write dataframe as CSV file to FTP server
-    /*  df.write.
-    format("com.springml.spark.sftp").
-    option("host", "SFTP_HOST").
-    option("username", "SFTP_USER").
-    option("password", "****").
-    option("fileType", "csv").
-    option("delimiter", ";").
-    option("codec", "bzip2").
-    save("/ftp/files/sample.csv")*/
-
-
-    // Construct spark dataframe using text file in FTP server
-    /*  val df1 = sparkSession.read.
-    format("com.springml.spark.sftp").
-    option("host", "SFTP_HOST").
-    option("username", "SFTP_USER").
-    option("password", "****").
-    option("fileType", "txt").
-    load("config")*/
-
-    // Construct spark dataframe using xml file in FTP server
-    /* val df2 = sparkSession.read.
-    format("com.springml.spark.sftp").
-    option("host", "SFTP_HOST").
-    option("username", "SFTP_USER").
-    option("password", "*****").
-    option("fileType", "xml").
-    option("rowTag", "YEAR").load("myxml.xml")
-*/
-    // Write dataframe as XML file to FTP server
-
-    /*df.write.format("com.springml.spark.sftp").
-    option("host", "SFTP_HOST").
-    option("username", "SFTP_USER").
-    option("password", "*****").
-    option("fileType", "xml").
-    option("rootTag", "YTD").
-    option("rowTag", "YEAR").save("myxmlOut.xml.gz")*/
   }
 }
