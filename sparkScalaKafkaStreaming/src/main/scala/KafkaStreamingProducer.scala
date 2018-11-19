@@ -8,6 +8,7 @@ object KafkaStreamingProducer extends SparkSessionWrapper {
   def main(args: Array[String]) {
     println("elasticsearchHost = " + elasticsearchHost + " port = " + elasticsearchPort)
 
+    try {
     val vehicleSchema = StructType(
       Seq(
         StructField("event_id", IntegerType, true),
@@ -23,7 +24,7 @@ object KafkaStreamingProducer extends SparkSessionWrapper {
     val vehicleRawStreamDF = sparkSession
       .readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", "localhost:29092")
+      .option("kafka.bootstrap.servers", "10.0.0.9:9092,10.0.0.6:9092,10.0.0.7:9092")
       .option("subscribe", "vehicle-topic")
       // .option("kafka.enable.auto.commit","false") // All Kafka configurations should be set with kafka. prefix. Hence the correct option key is kafka.auto.offset.reset.
       .option("kafka.startingOffsets", "latest")
@@ -39,16 +40,26 @@ object KafkaStreamingProducer extends SparkSessionWrapper {
       .selectExpr("CAST(value AS STRING) as json").select(from_json(col("json"), vehicleSchema).as("data"))
       .select("data.*")
 
-    /*  vehicleJsonStream.writeStream
+    println(indexAndDocType)
+
+    val consoleQuery =  vehicleJsonStream.writeStream
     .outputMode(outputMode)
     .format("console")
-    .start().awaitTermination()*/
+    .start()
 
-    vehicleJsonStream.writeStream
+    val esQuery = vehicleJsonStream.writeStream
       .outputMode(outputMode)
       .format(destination)
       .option("checkpointLocation", checkpointLocation)
-      .start(indexAndDocType).awaitTermination()
+      .start(indexAndDocType)
+
+    consoleQuery.awaitTermination()
+    esQuery.awaitTermination()
 
   }
+    catch {
+      case e: Exception => println(e)
+    }
+  }
+
 }

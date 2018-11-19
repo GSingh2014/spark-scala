@@ -11,8 +11,8 @@ trait SparkSessionWrapper {
   val master = config.getString("spark.master")
   // private val appName = config.getString("spark.app.name")
 
-  // private val elasticsearchUser = config.getString("spark.elasticsearch.username")
-  // private val elasticsearchPass = config.getString("spark.elasticsearch.password")
+  val elasticsearchUser = config.getString("spark.elasticsearch.username")
+  val elasticsearchPass = config.getString("spark.elasticsearch.password")
   val elasticsearchHost = config.getString("spark.elasticsearch.host")
   val elasticsearchPort = config.getString("spark.elasticsearch.port")
 
@@ -27,8 +27,10 @@ trait SparkSessionWrapper {
     .config(ConfigurationOptions.ES_NODES, elasticsearchHost)
     .config(ConfigurationOptions.ES_PORT, elasticsearchPort)
     .config(ConfigurationOptions.ES_INDEX_AUTO_CREATE, true)
+    .config(ConfigurationOptions.ES_NET_HTTP_AUTH_USER, elasticsearchUser)
+    .config(ConfigurationOptions.ES_NET_HTTP_AUTH_PASS, elasticsearchPass)
     .config("spark.cleaner.referenceTracking.cleanCheckpoints", true)
-    .config(ConfigurationOptions.ES_NODES_WAN_ONLY, true) // For this error to connect to docker container "I/O exception (java.net.ConnectException) caught when processing request: Connection timed out: connect"
+    //.config(ConfigurationOptions.ES_NODES_WAN_ONLY, true) // For this error to connect to docker container "I/O exception (java.net.ConnectException) caught when processing request: Connection timed out: connect"
     .master(master)
     .appName("Spark-Structured-Streaming-Kafka-Producer")
     .getOrCreate()
