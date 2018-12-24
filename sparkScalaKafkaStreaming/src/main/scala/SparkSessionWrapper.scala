@@ -23,7 +23,11 @@ trait SparkSessionWrapper {
   val docType = config.getString("spark.elasticsearch.doc.type")
   val indexAndDocType = s"$index/$docType"
 
+  val kafkabrokers = config.getString("spark.kafka.broker")
+  val kafkatopic = config.getString("spark.kafka.topic")
+
   lazy  val sparkSession = SparkSession.builder()
+    .config("fs.azure.account.key.opensourcestore.blob.core.windows.net","oMgaEHt7gr801a4rN/hWgqrqtYnT1RFvja+MX/JiwXXVkTkkfi7vwmw+5dq99P29QYAO041wdWfwglydUNHA4Q==")
     .config(ConfigurationOptions.ES_NODES, elasticsearchHost)
     .config(ConfigurationOptions.ES_PORT, elasticsearchPort)
     .config(ConfigurationOptions.ES_INDEX_AUTO_CREATE, true)
