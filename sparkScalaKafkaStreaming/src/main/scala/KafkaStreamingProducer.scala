@@ -24,7 +24,7 @@ object KafkaStreamingProducer extends SparkSessionWrapper {
     val vehicleRawStreamDF = sparkSession
       .readStream
       .format("kafka")
-      .option("kafka.bootstrap.servers", "10.0.0.9:9092,10.0.0.6:9092,10.0.0.7:9092")
+      .option("kafka.bootstrap.servers", kafkabrokers)
       .option("subscribe", "vehicle-topic")
       // .option("kafka.enable.auto.commit","false") // All Kafka configurations should be set with kafka. prefix. Hence the correct option key is kafka.auto.offset.reset.
       .option("kafka.startingOffsets", "latest")
@@ -45,6 +45,7 @@ object KafkaStreamingProducer extends SparkSessionWrapper {
     val consoleQuery =  vehicleJsonStream.writeStream
     .outputMode(outputMode)
     .format("console")
+    .option("truncate", false)
     .start()
 
     val esQuery = vehicleJsonStream.writeStream
