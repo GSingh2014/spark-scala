@@ -2,6 +2,12 @@ package com.sparkScala
 
 import java.io.ByteArrayOutputStream
 
+import org.apache.avro.io.DecoderFactory
+import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
+
+import scala.collection.mutable
+import scala.util.Try
+
 //import scala.util.parsing.json.JSONFormat.ValueFormatter
 //import scala.util.parsing.json.{JSONArray, JSONFormat, JSONObject}
 
@@ -14,6 +20,8 @@ import com.jcraft.jsch.JSch
 import org.apache.spark.sql.{Row, SparkSession, functions, DataFrame}
 import com.databricks.spark.avro._
 import io.confluent.kafka.schemaregistry.client.rest.RestService
+import io.confluent.kafka.serializers.KafkaAvroDeserializer
+import scala.reflect.runtime.universe.TypeTag
 
 import org.apache.avro.Schema
 import org.apache.spark.sql.types.StructType
@@ -21,6 +29,8 @@ import org.apache.avro.generic.{GenericData, GenericDatumWriter, GenericRecord}
 import org.apache.avro.io.{EncoderFactory, BinaryEncoder}
 
 import scala.collection.mutable.ListBuffer
+import collection.JavaConverters._
+import scala.collection.JavaConversions._
 
 //import com.sparkScala.Schema2CaseClass
 
@@ -29,21 +39,17 @@ import scala.collection.mutable.ListBuffer
 
 // DOES NOT DELETE THE FILES FROM SFTP AFTER THEY HAVE BEEN PUSHED TO KAFKA
 
+
+
 object SftpStreaming extends SparkSessionWrapper {
 
-/*  val SFTPHOST = "localhost"
+  val SFTPHOST = "localhost"
   val SFTPPORT = 2233
   val SFTPUSER = "gsingh"
   val SFTPPASS = "tc@5f^p"
-  val SFTPWORKINGDIR = "/upload/" */
+  val SFTPWORKINGDIR = "/upload/bus_traffic/"
   val schemaRegistryURL = "http://localhost:8081"
 
-  //Credentials of the SFTP server on Azure cloud
-  val SFTPHOST =  "10.0.2.8" //"40.69.101.155"
-  val SFTPPORT = 22
-  val SFTPUSER = "tc-rh3l-admin"
-  val SFTPPASS = "P0cHd1@101"
-  val SFTPWORKINGDIR = "upload/"
 
   def getSchema(schema:String) : Schema ={
     val avroschema = new Schema.Parser().parse(schema)
@@ -75,7 +81,11 @@ object SftpStreaming extends SparkSessionWrapper {
     "\"type\": \"record\"," +
     "\"fields\": [" +
     "{\"name\": \"id\", \"type\": \"int\" }," +
-    "{\"name\": \"username\", \"type\": \"string\" }" +
+    "{\"name\": \"username\", \"type\": \"string\" }," +
+    "{ \"name\": \"dateofcreation\", \"type\": \"long\",\"default\": 19700101 }," +
+    "{ \"name\": \"status\", \"type\": \"string\",\"default\": \"active\" }," +
+    "{ \"name\": \"returncode\", \"type\": \"int\",\"default\": 0 }," +
+    "{ \"name\": \"phone\", \"type\": \"int\",\"default\": 1234567 }" +
     "]}"
 
   /*def getValuesMap[T](row: Row, schema: StructType): Map[String,Any] = {
@@ -105,7 +115,7 @@ object SftpStreaming extends SparkSessionWrapper {
   }*/
 
   //val avroSchema = getSchema(schema)
-  val avroSchema = getSchema(schemaRegistryURL,"sftp-topic")
+  val avroSchema = getSchema(schemaRegistryURL,"bus-topic")
 
 /*  def encode(schema: org.apache.avro.Schema, row: Row): Array[Byte] = {
     val gr: GenericRecord = new GenericData.Record(schema)
@@ -129,13 +139,13 @@ object SftpStreaming extends SparkSessionWrapper {
       try{
       println(SFTPUSER, SFTPHOST)
       val jsch = new JSch()
-      val session = jsch.getSession(SFTPUSER, SFTPHOST)
+      val session = jsch.getSession(SFTPUSER, SFTPHOST, SFTPPORT)
       session.setPassword(SFTPPASS)
      session.setConfig(
         "PreferredAuthentications",
         "publickey,keyboard-interactive,password")
       //jsch.addIdentity("C:\\Users\\singhgo\\.ssh\\id_rsa","P0cHd1@101")
-      jsch.addIdentity("~/.ssh/id_rsa_sshtcuser",SFTPPASS)
+      jsch.addIdentity("~/.ssh/id_rsa",SFTPPASS)
       val config = new java.util.Properties()
       config.put("StrictHostKeyChecking", "no")
       session.setConfig(config)
@@ -146,7 +156,7 @@ object SftpStreaming extends SparkSessionWrapper {
       val channelSftp:ChannelSftp = channel.asInstanceOf[ChannelSftp]
       channelSftp.cd(SFTPWORKINGDIR)
 
-      val listOfFiles = channelSftp.ls("*")
+      val listOfFiles = channelSftp.ls("*.csv")
 
       var filename:String =""
 
@@ -211,6 +221,37 @@ object SftpStreaming extends SparkSessionWrapper {
       out.toByteArray()
   }
 
+
+  def deserialize[T : TypeTag](bytes: Array[Byte]): List[Row] = {
+    import org.apache.avro.file.SeekableByteArrayInput
+    import org.apache.avro.generic.{GenericDatumReader, GenericRecord}
+
+
+    val datumReader = new GenericDatumReader[GenericRecord](avroSchema)
+    val inputStream = new SeekableByteArrayInput(bytes)
+    val decoder = DecoderFactory.get.binaryDecoder(inputStream, null)
+
+    val struct_schema = SchemaConverters.toSqlType(avroSchema).dataType.asInstanceOf[StructType]
+
+    val result = new mutable.MutableList[Row]
+    while (!decoder.isEnd) {
+      val item = datumReader.read(null, decoder)
+
+      print(item.getClass)
+
+      val objectArray = new Array[Any](item.asInstanceOf[GenericRecord].getSchema.getFields.size)
+
+      for (field <- item.getSchema.getFields) {
+        objectArray(field.pos) = item.get(field.pos)
+      }
+
+      //result += sql_item
+      result += new GenericRowWithSchema(objectArray, struct_schema)
+     }
+    result.toList
+  }
+
+
   def saveToKafka(structSchema: StructType, filename: String, filenumber: Int, topicname : String) = {
     println("***Saving contents of file#" + filenumber + " -> " + filename +" to kafka***")
     //dbutils.fs.ls("wasb://spark-opensource@opensourcestore.blob.core.windows.net/tmp/")
@@ -219,14 +260,14 @@ object SftpStreaming extends SparkSessionWrapper {
       schema(structSchema).
       //("wasb://spark-opensource@opensourcestore.blob.core.windows.net/tmp/").
       option("host", SFTPHOST).
-      //option("port", SFTPPORT).
+      option("port", SFTPPORT).
       option("username", SFTPUSER).
       option("password", SFTPPASS).
       //option("pem", "C:\\Users\\singhgo\\.ssh\\id_rsa").
-      option("pem","~/.ssh/id_rsa_sshtcuser").
-      option("pemPassphrase", SFTPPASS).
+      //option("pem","~/.ssh/id_rsa").
+      //option("pemPassphrase", SFTPPASS).
       option("fileType", "csv").
-      option("delimiter", ":").
+      option("delimiter", ",").
       option("header", false).
       option("inferSchema", false).
       load(SFTPWORKINGDIR + filename)
@@ -235,7 +276,12 @@ object SftpStreaming extends SparkSessionWrapper {
 
     df.show(1)
 
-    val serializeUDF = functions.udf(serialize(schema) _)
+    println(structSchema.typeName)
+
+
+    //val serializeUDF = functions.udf(serialize(schema) _)
+
+    val serializeUDF = functions.udf(serialize(avroSchema.toString) _)
 
     val column = df.columns.map{c => functions.lit(c)}
 
@@ -260,8 +306,10 @@ object SftpStreaming extends SparkSessionWrapper {
       .format("kafka")
       .option("kafka.bootstrap.servers", kafkabrokers)
       .option("subscribe", kafkatopic)
-      // .option("kafka.enable.auto.commit","false") // All Kafka configurations should be set with kafka. prefix. Hence the correct option key is kafka.auto.offset.reset.
-      .option("kafka.startingOffsets", "latest")
+      //.option("kafka.enable.auto.commit","false") // All Kafka configurations should be set with kafka. prefix. Hence the correct option key is kafka.auto.offset.reset.
+      .option("startingOffsets", "earliest") //"latest" for streaming, "earliest" for batch
+      //.option("endingOffsets", "latest")
+      //.option("max.partition.fetch.bytes", "204857600")
       .load()
 
     import sparkSession.implicits._
@@ -289,7 +337,7 @@ object SftpStreaming extends SparkSessionWrapper {
    /* val arrayToString = ((arr: collection.mutable.WrappedArray[String]) =>
       arr.flatten.mkString(",")) */
 
-    val getColumnsUDF = functions.udf((details: Seq[String]) => {
+/*    val getColumnsUDF = functions.udf((details: Seq[String]) => {
       //val columnList = List("id","username")
       val columnList = structSchema.fieldNames.toList
       val split_details = details.mkString(",").split(",")
@@ -306,17 +354,18 @@ object SftpStreaming extends SparkSessionWrapper {
       .withColumn("delimitedRow", functions.explode(flatMapUdf(functions.col("value"))))
       .withColumn("newcol", functions.split(functions.col("delimitedRow"),","))
       .withColumn("mapcol", getColumnsUDF($"newcol"))
-      .withColumn("jsoncol", functions.to_json($"mapcol"))
-      .drop("value","delimitedRow","newcol","mapcol")
+      .withColumn("id",functions.lit($"mapcol.id"))
+      //.withColumn("jsoncol", functions.to_json($"mapcol"))
+      .drop("value","delimitedRow","newcol")
 
       //.withColumn("jsonCol", convertToJsonUDF(functions.col("newcol")))
 
       // columnlist.foreach(elt => tempDF.withColumn(elt, $"newcol"(elt.indexOf(elt))))
 
     //.withColumn("id", $"newcol"(0))
-     // .withColumn("username", $"newcol"(1))*/
+     // .withColumn("username", $"newcol"(1))
 
-
+      outDF.printSchema()*/
 
  //   val newDF = tempDF.withColumn("jsonCol", convertToJsonUDF(tempDF("newcol"),structSchema))
       //.withColumn("jspnCol",functions.to_json( functions.struct( tempDF.columns.map(functions.col(_)):_* ) ) )
@@ -325,8 +374,12 @@ object SftpStreaming extends SparkSessionWrapper {
       //.select(structSchema.map(field => functions.col(field.name).cast(field.dataType)): _*)
       //.map(row => convertRowToJSON(row, structSchema)).toJSON
 
-    val consoleQuery = outDF
-       //.withColumn("structRow", functions.split(sftpReadStream.columns.map(c=> _)))
+    val deserializeUDF = functions.udf(deserialize _)
+
+    val es_df = sftpReadStream.withColumn("value", deserializeUDF($"value"))
+
+    val consoleQuery = es_df
+        //.withColumn("structRow", functions.split(sftpReadStream.columns.map(c=> _)))
        .writeStream
        .outputMode(outputMode)
        .format("console")
@@ -339,9 +392,13 @@ object SftpStreaming extends SparkSessionWrapper {
 
 /*    val esQuery = outDF.writeStream
       .outputMode(outputMode)
-      .format(destination)
+      .format("org.elasticsearch.spark.sql")
       .option("checkpointLocation", checkpointLocation)
+     // .option("es.read.metadata", "true")
+     // .option("es.mapping.id","id")
+     // .option("es.write.operation","upsert")
       .start(indexAndDocType)
+
 
     esQuery.awaitTermination()*/
   }
@@ -360,13 +417,13 @@ object SftpStreaming extends SparkSessionWrapper {
     //println(avroSchema)
     println(structSchema)
 
-/*    val listOfFiles = getListOfFiles() //List("users.conf")
+
+    val listOfFiles = getListOfFiles() //List("users.conf")
 
     println("---Printing ListOfFiles----")
     println(listOfFiles)
 
-    for (file <- listOfFiles) saveToKafka(structSchema, file, listOfFiles.indexOf(file) + 1, "sftp-topic")*/
-
+   //// for (file <- listOfFiles) saveToKafka(structSchema, file, listOfFiles.indexOf(file) + 1, "bus-topic")
     //Consume Kafka and write to elasticSearch
 
     WriteToElastic(structSchema)
