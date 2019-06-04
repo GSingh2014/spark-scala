@@ -1,5 +1,8 @@
 package com.sparkScala
 
+import java.text.SimpleDateFormat
+import java.util.Calendar
+
 import org.apache.spark.sql.SparkSession
 import com.typesafe.config.ConfigFactory
 import org.elasticsearch.hadoop.cfg.ConfigurationOptions
@@ -21,16 +24,22 @@ trait SparkSessionWrapper {
   val checkpointLocation = config.getString("spark.elasticsearch.checkpoint.location")
   val index = config.getString("spark.elasticsearch.index")
   val docType = config.getString("spark.elasticsearch.doc.type")
-  val indexAndDocType = s"$index/$docType"
+  val format = new SimpleDateFormat("yMd")
+  val indexAndDocType = s"$index-" + format.format(Calendar.getInstance().getTime()) +"/$docType"
+
+  val kafkabrokers = config.getString("spark.kafka.broker")
+  val kafkatopic = config.getString("spark.kafka.topic")
 
   lazy  val sparkSession = SparkSession.builder()
+
     .config(ConfigurationOptions.ES_NODES, elasticsearchHost)
     .config(ConfigurationOptions.ES_PORT, elasticsearchPort)
     .config(ConfigurationOptions.ES_INDEX_AUTO_CREATE, true)
-    .config(ConfigurationOptions.ES_NET_HTTP_AUTH_USER, elasticsearchUser)
-    .config(ConfigurationOptions.ES_NET_HTTP_AUTH_PASS, elasticsearchPass)
+    //.config(ConfigurationOptions.ES_NET_HTTP_AUTH_USER, elasticsearchUser)
+    //.config(ConfigurationOptions.ES_NET_HTTP_AUTH_PASS, elasticsearchPass)
+    //.config(ConfigurationOptions.ES_HTTP_TIMEOUT,"2m")
     .config("spark.cleaner.referenceTracking.cleanCheckpoints", true)
-    //.config(ConfigurationOptions.ES_NODES_WAN_ONLY, true) // For this error to connect to docker container "I/O exception (java.net.ConnectException) caught when processing request: Connection timed out: connect"
+    .config(ConfigurationOptions.ES_NODES_WAN_ONLY, true) // For this error to connect to docker container "I/O exception (java.net.ConnectException) caught when processing request: Connection timed out: connect"
     .master(master)
     .appName("Spark-Structured-Streaming-Kafka-Producer")
     .getOrCreate()
