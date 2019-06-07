@@ -2,19 +2,24 @@ package com.sparkScala
 
 import java.io.File
 
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.{DataFrame, Row, SaveMode, functions}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
 import org.datasyslab.geospark.formatMapper.shapefileParser.ShapefileReader
 import org.datasyslab.geosparksql.utils.Adapter
+import com.microsoft.azure.sqldb.spark.connect._
+
 
 object GeoSpatialShapefileIngestion extends SparkSessionWrapper{
 
   def main(args: Array[String]): Unit = {
 
+
     val dir = new File("C:\\Users\\singhgo\\Documents\\work\\dev\\shapefiles")
 
     val subdirList = getListOfSubDirectories(dir)
+
+
 
     val schema = StructType(Seq(
       StructField("geometry", StringType, nullable = true),
@@ -23,7 +28,8 @@ object GeoSpatialShapefileIngestion extends SparkSessionWrapper{
       StructField("name", StringType, nullable = true),
       StructField("scalerank", StringType, nullable = true),
       StructField("min_zoom", StringType, nullable = true),
-      StructField("depth", StringType, nullable = true)
+      StructField("depth", StringType, nullable = true),
+      StructField("geojson", StringType, nullable = true)
     ))
 
     /*var rawSpatialDfMap = Map[String, (DataType, Boolean)]()
@@ -83,11 +89,29 @@ object GeoSpatialShapefileIngestion extends SparkSessionWrapper{
       initDF = unionDF
     }
 
+    // Convert geometry to geoJSON
+    val geojsonDF = unionDF.withColumn("geojson", strGeometry2JsonUDF(unionDF.col("geometry")))
     print("****************")
-    unionDF.printSchema()
-    unionDF.show(10000)
+    geojsonDF.printSchema()
+    geojsonDF.select("geojson").show(10, false)
+
+    geojsonDF.write.mode(SaveMode.Append).sqlDB(sqldbconfig)
 
   }
+
+    private val strGeometry2JsonUDF = udf((geometry: String) => {
+      val keyMap = Map("MULTILINESTRING" -> "MultiLineString", "LINESTRING" -> "LineString", "POLYGON" -> "Polygon", "POINT" -> "Point", "MULTIPOLYGON" -> "MultiPolygon")
+      val arrGeom = geometry.replace("(","[").replace(")", "]")
+        .split("\\b [\\[]")
+      val coordinatesList = arrGeom{1}.split(",")
+      var updt_coordinatesList = ""
+      coordinatesList.foreach(x => updt_coordinatesList = updt_coordinatesList + "[" + x.replaceAll("\\d\\s", ",") + "]")
+      updt_coordinatesList = updt_coordinatesList.replaceAll("\\]\\[", "\\],\\[")
+      val geojson = "{\"type\": \"FeatureCollection\",\"features\": [{\"type\": \"Feature\",\"geometry\":{\"type\": \"" + keyMap(arrGeom{0}) + "\", \"coordinates\": ["  + updt_coordinatesList + "}}]}"
+        .stripMargin
+      geojson.trim
+    })
+
 
     def expr(myCols: Set[String], allCols: Set[String]) = {
       allCols.toList.map(x => x match {
